@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bare IPTV</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+    <style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    background: #0f0f0f;
+    color: #e5e5e5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+    overflow: hidden;
+}
+
+/* Top bar */
+.topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: rgba(15, 15, 15, 0.95);
+    border-bottom: 1px solid #222;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 40px;
+    z-index: 100;
+    font-size: 20px;
+    font-weight: 500;
+}
+
+.topbar__left {
+    letter-spacing: 2px;
+}
+
+.topbar__right {
+    display: flex;
+    gap: 30px;
+    font-size: 18px;
+    font-weight: 400;
+    color: #999;
+}
+
+.topbar__clock {
+    min-width: 100px;
+    text-align: right;
+}
+
+/* Views */
+.view {
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: none;
+    overflow: hidden;
+    z-index: 10;
+}
+
+.view--active {
+    display: flex;
+}
+
+/* Browse view */
+#browse-view {
+    flex-direction: column;
+}
+
+.rails-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 40px;
+    scroll-behavior: smooth;
+}
+
+.rail {
+    margin-bottom: 60px;
+}
+
+.rail__title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #e5e5e5;
+    text-transform: capitalize;
+    transition: color 0.2s ease;
+    letter-spacing: 0.5px;
+}
+
+.rail__title--focused {
+    color: #4da6ff;
+    text-shadow: 0 0 10px rgba(77, 166, 255, 0.4);
+}
+
+.rail__cards {
+    display: flex;
+    gap: 20px;
+    overflow-x: visible;
+    flex-wrap: nowrap;
+}
+
+.card {
+    flex: 0 0 220px;
+    cursor: pointer;
+    outline: 2px solid transparent;
+    outline-offset: 8px;
+    transition: all 0.15s ease;
+    position: relative;
+    z-index: 1;
+}
+
+.card__poster {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    color: #666;
+    font-weight: bold;
+    margin-bottom: 10px;
+    transition: all 0.15s ease;
+}
+
+.card__title {
+    font-size: 16px;
+    font-weight: 500;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.15s ease;
+}
+
+.card--focused {
+    outline: 3px solid #4da6ff;
+    outline-offset: 8px;
+    z-index: 20;
+}
+
+.card--focused .card__poster {
+    transform: scale(1.05);
+    box-shadow: 0 8px 24px rgba(77, 166, 255, 0.3);
+}
+
+.card--focused .card__title {
+    color: #fff;
+}
+
+/* Overlays */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    backdrop-filter: blur(2px);
+}
+
+.overlay--hidden {
+    display: none !important;
+}
+
+.detail-panel {
+    background: #1a1a1a;
+    border-radius: 12px;
+    padding: 40px;
+    max-width: 600px;
+    width: 90%;
+    border: 1px solid #333;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+}
+
+.detail-close {
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    font-size: 32px;
+    color: #666;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.detail-close:hover {
+    color: #999;
+}
+
+.detail-poster {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, #0f1923 0%, #152238 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    color: #555;
+    margin-bottom: 30px;
+}
+
+.detail-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #e5e5e5;
+    margin-bottom: 15px;
+    word-break: break-word;
+}
+
+.detail-desc {
+    font-size: 16px;
+    color: #999;
+    line-height: 1.6;
+    margin-bottom: 30px;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 15px;
+}
+
+.confirm-panel {
+    background: #1a1a1a;
+    border-radius: 12px;
+    padding: 40px;
+    border: 1px solid #333;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+}
+
+.confirm-title {
+    font-size: 24px;
+    font-weight: 500;
+    margin-bottom: 30px;
+    color: #e5e5e5;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+/* Buttons */
+.btn {
+    padding: 12px 30px;
+    font-size: 18px;
+    font-weight: 500;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background: #0066cc;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+.btn:hover {
+    background: #0052a3;
+}
+
+.btn--focus {
+    border-color: #4da6ff;
+    box-shadow: 0 0 12px rgba(77, 166, 255, 0.4);
+    background: #0073e6;
+}
+
+.btn--danger {
+    background: #cc3333;
+}
+
+.btn--danger:hover {
+    background: #aa2222;
+}
+
+/* Player view */
+#player-view {
+    background: #000;
+}
+
+.player-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.player-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.player-osd {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
+    right: 30px;
+    font-size: 16px;
+    color: #bbb;
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+.player-osd__title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: #fff;
+}
+
+.player-osd__time {
+    font-size: 16px;
+    margin-bottom: 10px;
+}
+
+.player-osd__hint {
+    font-size: 14px;
+    color: #666;
+}
+
+/* Debug HUD */
+.debug-hud {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #0f0;
+    z-index: 999;
+    max-width: 250px;
+    line-height: 1.6;
+}
+
+.debug-hud--hidden {
+    display: none !important;
+}
+
+.debug-hud__row {
+    margin: 5px 0;
+    word-break: break-all;
+}
+
+/* Scrollbar styling */
+.rails-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.rails-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.rails-container::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 4px;
+}
+
+.rails-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .card {
+        flex: 0 0 180px;
+    }
+
+    .rail__title {
+        font-size: 24px;
+    }
+
+    .topbar {
+        padding: 0 30px;
+        height: 50px;
+        font-size: 18px;
+    }
+
+    .rails-container {
+        padding: 30px;
+    }
+}
+    </style>
+</head>
+<body>
+    <!-- Top bar -->
+    <div class="topbar">
+        <div class="topbar__left">Bare IPTV</div>
+        <div class="topbar__right">
+            <span class="topbar__clock">--:--</span>
+            <span class="topbar__status">Demo</span>
+        </div>
+    </div>
+
+    <!-- Main browse view -->
+    <div id="browse-view" class="view view--active">
+        <div class="rails-container" id="rails-container">
+            <!-- Rails generated by JS -->
+        </div>
+    </div>
+
+    <!-- Detail overlay -->
+    <div id="detail-overlay" class="overlay overlay--hidden">
+        <div class="detail-panel">
+            <div class="detail-close">✕</div>
+            <div class="detail-poster">📺</div>
+            <div class="detail-title"></div>
+            <div class="detail-desc"></div>
+            <div class="detail-actions">
+                <button class="btn btn--play" data-action="play">Play</button>
+                <button class="btn btn--close" data-action="close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player view -->
+    <div id="player-view" class="view">
+        <div class="player-container">
+            <video id="video-player" class="player-video" controls></video>
+            <div class="player-osd">
+                <div class="player-osd__title"></div>
+                <div class="player-osd__time">
+                    <span id="current-time">0:00</span> / <span id="duration">0:00</span>
+                </div>
+                <div class="player-osd__hint">Esc to exit</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exit confirm overlay -->
+    <div id="exit-confirm" class="overlay overlay--hidden">
+        <div class="confirm-panel">
+            <div class="confirm-title">Exit app?</div>
+            <div class="confirm-actions">
+                <button class="btn" data-action="cancel">Cancel</button>
+                <button class="btn btn--danger" data-action="exit">Exit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug HUD -->
+    <div id="debug-hud" class="debug-hud debug-hud--hidden">
+        <div class="debug-hud__row">View: <span id="debug-view">browse</span></div>
+        <div class="debug-hud__row">Rail: <span id="debug-rail">0</span></div>
+        <div class="debug-hud__row">Card: <span id="debug-card">0</span></div>
+        <div class="debug-hud__row">Stream: <span id="debug-stream">---</span></div>
+    </div>
+
+    <script>
+// ===== CONFIG =====
+const CONFIG = {
+    DEFAULT_STREAM: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+    RAILS_COUNT: 6,
+    ITEMS_PER_RAIL: 12,
+};
+
+// ===== DATA MODEL =====
+const dataModel = {
+    rails: [],
+    init() {
+        const categories = ['Films', 'Series', 'Documentaires', 'Muziek', 'Sport', 'Kids'];
+        for (let r = 0; r < CONFIG.RAILS_COUNT; r++) {
+            const items = [];
+            for (let i = 0; i < CONFIG.ITEMS_PER_RAIL; i++) {
+                items.push({
+                    id: `${r}-${i}`,
+                    title: `${categories[r]} ${i + 1}`,
+                    category: categories[r],
+                    streamUrl: CONFIG.DEFAULT_STREAM,
+                    duration: Math.floor(Math.random() * 90 + 30),
+                    tags: ['HD', 'NEW', 'Popular'].slice(0, Math.floor(Math.random() * 2 + 1))
+                });
+            }
+            this.rails.push({
+                id: categories[r],
+                title: categories[r],
+                items: items,
+                lastCardIndex: 0
+            });
+        }
+    },
+    getItem(railIdx, cardIdx) {
+        if (railIdx >= 0 && railIdx < this.rails.length) {
+            const rail = this.rails[railIdx];
+            if (cardIdx >= 0 && cardIdx < rail.items.length) {
+                return rail.items[cardIdx];
+            }
+        }
+        return null;
+    }
+};
+
+// ===== STATE =====
+const state = {
+    currentView: 'browse',
+    railIdx: 0,
+    cardIdx: 0,
+    selectedItem: null,
+    playingItem: null,
+    debugHudVisible: false,
+
+    showDetail(item) {
+        this.currentView = 'details';
+        this.selectedItem = item;
+    },
+    closeDetail() {
+        this.currentView = 'browse';
+        this.selectedItem = null;
+    },
+    startPlayback(item) {
+        this.currentView = 'player';
+        this.playingItem = item;
+    },
+    stopPlayback() {
+        playerModule.stop();
+        this.currentView = 'browse';
+        this.playingItem = null;
+    },
+    showExitConfirm() {
+        this.currentView = 'exitConfirm';
+    },
+    cancelExit() {
+        this.currentView = 'browse';
+    }
+};
+
+// ===== PLAYER MODULE =====
+const playerModule = {
+    video: null,
+    hlsInstance: null,
+
+    init() {
+        this.video = document.getElementById('video-player');
+        this.video.addEventListener('loadedmetadata', () => this.updateOSD());
+        this.video.addEventListener('timeupdate', () => this.updateOSD());
+        this.video.addEventListener('error', () => this.onPlaybackError());
+    },
+
+    async play(streamUrl, title) {
+        try {
+            if (this.hlsInstance) {
+                this.hlsInstance.destroy();
+                this.hlsInstance = null;
+            }
+            this.video.src = '';
+
+            document.querySelector('.player-osd__title').textContent = title || 'Playing...';
+
+            if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
+                this.video.src = streamUrl;
+                this.video.play();
+                return;
+            }
+
+            if (Hls.isSupported()) {
+                this.hlsInstance = new Hls({
+                    debug: false,
+                    enableWorker: true,
+                });
+                this.hlsInstance.loadSource(streamUrl);
+                this.hlsInstance.attachMedia(this.video);
+
+                this.hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        this.onPlaybackError();
+                    }
+                });
+
+                this.video.play();
+            } else {
+                this.onPlaybackError();
+            }
+        } catch (err) {
+            console.error('Playback error:', err);
+            this.onPlaybackError();
+        }
+    },
+
+    updateOSD() {
+        const current = this.formatTime(this.video.currentTime);
+        const duration = this.formatTime(this.video.duration);
+        document.getElementById('current-time').textContent = current;
+        document.getElementById('duration').textContent = duration;
+    },
+
+    formatTime(seconds) {
+        if (!isFinite(seconds)) return '0:00';
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+    },
+
+    onPlaybackError() {
+        const title = document.querySelector('.player-osd__title');
+        title.textContent = 'Playback error - stream unavailable';
+        title.style.color = '#ff6b6b';
+    },
+
+    stop() {
+        this.video.pause();
+        this.video.src = '';
+        if (this.hlsInstance) {
+            this.hlsInstance.destroy();
+            this.hlsInstance = null;
+        }
+    }
+};
+
+// ===== RENDERING =====
+const render = {
+    browseView() {
+        const container = document.getElementById('rails-container');
+        container.innerHTML = '';
+
+        dataModel.rails.forEach((rail, rIdx) => {
+            const railEl = document.createElement('div');
+            railEl.className = `rail ${rIdx === state.railIdx ? 'rail--focused' : ''}`;
+            railEl.setAttribute('data-rail-idx', rIdx);
+
+            const titleEl = document.createElement('div');
+            titleEl.className = `rail__title ${rIdx === state.railIdx ? 'rail__title--focused' : ''}`;
+            titleEl.textContent = rail.title;
+
+            const cardsEl = document.createElement('div');
+            cardsEl.className = 'rail__cards';
+
+            rail.items.forEach((item, cIdx) => {
+                const cardEl = document.createElement('div');
+                cardEl.className = `card ${rIdx === state.railIdx && cIdx === state.cardIdx ? 'card--focused' : ''}`;
+                cardEl.setAttribute('data-rail-idx', rIdx);
+                cardEl.setAttribute('data-card-idx', cIdx);
+
+                const posterEl = document.createElement('div');
+                posterEl.className = 'card__poster';
+                posterEl.textContent = '📺';
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'card__title';
+                titleEl.textContent = item.title;
+
+                cardEl.appendChild(posterEl);
+                cardEl.appendChild(titleEl);
+                cardsEl.appendChild(cardEl);
+            });
+
+            railEl.appendChild(titleEl);
+            railEl.appendChild(cardsEl);
+            container.appendChild(railEl);
+        });
+
+        this.showView('browse-view');
+    },
+
+    detailOverlay() {
+        const overlay = document.getElementById('detail-overlay');
+        if (!state.selectedItem) {
+            overlay.classList.add('overlay--hidden');
+            return;
+        }
+
+        document.querySelector('.detail-title').textContent = state.selectedItem.title;
+        document.querySelector('.detail-desc').textContent = 
+            `Category: ${state.selectedItem.category} | Duration: ${state.selectedItem.duration} min | Tags: ${state.selectedItem.tags.join(', ')}`;
+
+        overlay.classList.remove('overlay--hidden');
+    },
+
+    playerView() {
+        if (state.playingItem) {
+            playerModule.play(state.playingItem.streamUrl, state.playingItem.title);
+        }
+        this.showView('player-view');
+    },
+
+    exitConfirmOverlay() {
+        const overlay = document.getElementById('exit-confirm');
+        overlay.classList.remove('overlay--hidden');
+    },
+
+    hideOverlay(id) {
+        const overlay = document.getElementById(id);
+        if (overlay) {
+            overlay.classList.add('overlay--hidden');
+        }
+    },
+
+    showView(viewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('view--active'));
+        const view = document.getElementById(viewId);
+        if (view) view.classList.add('view--active');
+    },
+
+    updateClock() {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        document.querySelector('.topbar__clock').textContent = `${h}:${m}`;
+    },
+
+    updateDebugHud() {
+        if (!state.debugHudVisible) return;
+        document.getElementById('debug-view').textContent = state.currentView;
+        document.getElementById('debug-rail').textContent = state.railIdx;
+        document.getElementById('debug-card').textContent = state.cardIdx;
+        document.getElementById('debug-stream').textContent = state.selectedItem?.streamUrl.slice(0, 30) + '...' || '---';
+    },
+
+    toggleDebugHud() {
+        state.debugHudVisible = !state.debugHudVisible;
+        const hud = document.getElementById('debug-hud');
+        hud.classList.toggle('debug-hud--hidden');
+    }
+};
+
+// ===== FOCUS & NAVIGATION =====
+const focus = {
+    moveUp() {
+        if (state.currentView === 'browse') {
+            if (state.railIdx > 0) {
+                state.railIdx--;
+                state.cardIdx = dataModel.rails[state.railIdx].lastCardIndex;
+                render.browseView();
+            }
+        }
+    },
+
+    moveDown() {
+        if (state.currentView === 'browse') {
+            if (state.railIdx < dataModel.rails.length - 1) {
+                state.railIdx++;
+                state.cardIdx = dataModel.rails[state.railIdx].lastCardIndex;
+                render.browseView();
+            }
+        }
+    },
+
+    moveLeft() {
+        if (state.currentView === 'browse') {
+            const rail = dataModel.rails[state.railIdx];
+            if (state.cardIdx > 0) {
+                state.cardIdx--;
+                rail.lastCardIndex = state.cardIdx;
+                render.browseView();
+            }
+        }
+    },
+
+    moveRight() {
+        if (state.currentView === 'browse') {
+            const rail = dataModel.rails[state.railIdx];
+            if (state.cardIdx < rail.items.length - 1) {
+                state.cardIdx++;
+                rail.lastCardIndex = state.cardIdx;
+                render.browseView();
+            }
+        }
+    },
+
+    select() {
+        if (state.currentView === 'browse') {
+            const item = dataModel.getItem(state.railIdx, state.cardIdx);
+            if (item) {
+                state.showDetail(item);
+                render.detailOverlay();
+            }
+        }
+    },
+
+    back() {
+        if (state.currentView === 'player') {
+            state.stopPlayback();
+            render.browseView();
+        } else if (state.currentView === 'details') {
+            state.closeDetail();
+            render.hideOverlay('detail-overlay');
+            render.browseView();
+        } else if (state.currentView === 'browse') {
+            state.showExitConfirm();
+            render.exitConfirmOverlay();
+        } else if (state.currentView === 'exitConfirm') {
+            state.cancelExit();
+            render.hideOverlay('exit-confirm');
+            render.browseView();
+        }
+    }
+};
+
+// ===== KEY HANDLING =====
+document.addEventListener('keydown', (e) => {
+    const keyMap = {
+        'ArrowUp': 'up',
+        'ArrowDown': 'down',
+        'ArrowLeft': 'left',
+        'ArrowRight': 'right',
+        'Enter': 'ok',
+        'Escape': 'back',
+        '0': 'debug',
+        ' ': 'pause'
+    };
+
+    const key = keyMap[e.key];
+    if (!key) return;
+
+    e.preventDefault();
+
+    switch (key) {
+        case 'up':
+            focus.moveUp();
+            break;
+        case 'down':
+            focus.moveDown();
+            break;
+        case 'left':
+            focus.moveLeft();
+            break;
+        case 'right':
+            focus.moveRight();
+            break;
+        case 'ok':
+            if (state.currentView === 'browse') {
+                focus.select();
+            } else if (state.currentView === 'details') {
+                const item = state.selectedItem;
+                if (item) {
+                    state.startPlayback(item);
+                    render.hideOverlay('detail-overlay');
+                    render.playerView();
+                }
+            }
+            break;
+        case 'back':
+            focus.back();
+            break;
+        case 'debug':
+            render.toggleDebugHud();
+            break;
+        case 'pause':
+            if (state.currentView === 'player') {
+                if (playerModule.video.paused) {
+                    playerModule.video.play();
+                } else {
+                    playerModule.video.pause();
+                }
+            }
+            break;
+    }
+
+    render.updateDebugHud();
+});
+
+// ===== BUTTON HANDLERS =====
+document.addEventListener('click', (e) => {
+    const action = e.target.dataset.action;
+    if (!action) return;
+
+    switch (action) {
+        case 'play':
+            if (state.selectedItem) {
+                state.startPlayback(state.selectedItem);
+                render.hideOverlay('detail-overlay');
+                render.playerView();
+            }
+            break;
+        case 'close':
+            state.closeDetail();
+            render.hideOverlay('detail-overlay');
+            render.browseView();
+            break;
+        case 'cancel':
+            state.cancelExit();
+            render.hideOverlay('exit-confirm');
+            render.browseView();
+            break;
+        case 'exit':
+            alert('Exit app');
+            break;
+    }
+});
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+    dataModel.init();
+    playerModule.init();
+    render.browseView();
+    render.updateClock();
+    setInterval(() => render.updateClock(), 1000);
+    render.updateDebugHud();
+});
+    </script>
+</body>
+</html>
